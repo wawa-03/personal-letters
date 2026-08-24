@@ -8,7 +8,7 @@ import { archiveMetrics, letters, type ArchiveLetter } from "@/data/letters";
 
 function Paper({ letter, expanded = false }: { letter: ArchiveLetter; expanded?: boolean }) {
   const preview = ["rag", "ivory", "blue"].includes(letter.tone) ? letter.body : letter.lines;
-  const pageCount = expanded ? Math.max(1, letter.pages) : 1;
+  const pageCount = Math.max(1, letter.pages);
   return (
     <div className={`paper-stack paper-${letter.tone} ${expanded ? "is-expanded" : ""}`} style={{ "--letter-aspect": letter.aspect } as CSSProperties}>
       {Array.from({ length: pageCount }, (_, pageIndex) => (

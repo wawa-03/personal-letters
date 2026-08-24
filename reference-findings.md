@@ -42,6 +42,14 @@
 
 解除初始锁定后，蜡封开启状态的数据也已确认：类名变为 `archive-seal is-open`，显示尺寸为 400 × 400 px，位置为 `x:520px`、`y:228.5px`，基础变换为 `scale(2)`；背景层类名为 `archive-seal-backdrop is-visible`，不透明度为 1，背景为 `rgba(247,247,245,.72)`，过渡时长为 0.5 秒。桌面阅读器的精确网格为 `640px 320px`、间隙 56 px、舞台宽 1050 px、上下内边距为 56 px 与 48 px；关闭后实际保留 `scrollTop = 1100 px`。
 
+## 公开纸张图层机制
+
+对标站的信纸不是单张普通卡片。外层 `letter-stack` 中包含多个 `page`，每页都有 `pageRender`；档案态的第一页为相对定位，其余页使用绝对定位覆盖在同一画布上。每一页通过 `--stack-page-x`、`--stack-page-y` 和 `--stack-page-rotation` 产生独立的错位和微旋转，形成真实纸张叠放。该堆叠在视觉资源准备完成后从 `translateY(56px) scale(.985)` 以 680 ms 的 `cubic-bezier(.22,1,.36,1)` 进入。
+
+放大阅读态不再将页面重叠：`focusedStack` 使用 grid 和 28 px 间隔依序显示所有页面；每页保留自身纵横比，而内容渲染层固定为 640 px 宽后按 `--focused-page-scale` 缩放。每张纸还包含单独的纹理层和 1 px 边框层。纹理并非单一背景：公开 CSS 按纸张变体组合渐变、细线、径向污渍、折痕纹理和少量混合模式；手写体、墨色、纸色、行距与边距也随纸张变体变化。
+
+这说明当前项目的 CSS 近似纸张仍缺少两个关键维度：一是档案态真正的多页绝对叠放与逐页偏移，二是阅读态把所有页以 28 px 间隔展开。后续重建应使用原创纸张视觉资产或原创生成图层实现这些机制，而不复用对标站的图像、纹理或字体文件。
+
 ## 公开源码中确认的交互与实现线索
 
 页面使用 `vertical-archive`、`vertical-viewport`、`vertical-track` 和 `vertical-letter-slot` 组成独立滚动轨道。信件按 `--letter-width`、`--letter-x`、`--letter-y`、`--letter-gap` 和 `--letter-offset` 自定义定位，并带不同 `data-parallax-rate`。每一封信都是可点击按钮，内部是可展开的多页信笺堆叠。信笺样式包含 rag-paper、plain-ivory、service-blue、close-written-fold、office-typewriter、correspondence-card、ruled-notebook 与 red-folded 等变体。
