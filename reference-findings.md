@@ -16,6 +16,20 @@
 
 蜡封被点击后，页面的信件背景会整体淡化，中央出现约 240 px × 374 px 的金色竖向椭圆面。该椭圆承载简短说明文字，内容为深褐色衬线体；背景没有明显的黑色蒙层，仅保留极轻的失焦和降亮度。再次点击背景或蜡封可收起说明并恢复档案流。
 
+## 滚动与信件阅读器取证（待继续补齐关闭状态）
+
+参考站的档案不是普通页面滚动，而是固定在全屏内、隐藏滚动条的 `vertical-viewport` 独立滚动容器。滚动到 1100 px 时，信件仍以各自不同的 `translateY` 视差值移动；已采样的六张卡片分别出现约 `-25.6`、`+2.0`、`-16.2`、`+0.2`、`+2.8`、`-7.7` px 的额外纵向偏移。这意味着后续需要使用每张信独立的视差速率，不能只让整个轨道整体移动。
+
+点击信件后，参考站会给滚动容器添加 `has-selection` 并隐藏档案操作，随后出现独立的 `reader-backdrop is-webgl-focused` 阅读器。桌面阅读器包含左侧的大幅放大信纸，以及右侧的作者、背景、日期、地点、来源元数据栏；移动端另有独立关闭按钮。关闭入口是 `reader-dismiss-layer`，而非普通弹层的遮罩或蜡封背景。此前取证会话因已打开蜡封而污染了滚动与阅读截图，因此关闭后的恢复状态尚需在“蜡封关闭、阅读器关闭”的干净会话中再次捕获。
+
+在干净会话中，点击位于 `scrollTop = 1100 px` 的信件后，滚动容器类名从 `vertical-viewport` 切换为 `vertical-viewport has-selection is-intro-locked`，但 `scrollTop` 保持 `1100 px`。阅读器的独立舞台宽约 1050 px，并由覆盖整个视窗的 `reader-dismiss-layer` 承担关闭操作。关闭后，阅读器 DOM 被移除，滚动容器恢复为 `vertical-viewport`，`scrollTop` 仍准确保持 `1100 px`，原信件继续显示在此前的可见位置。
+
+桌面阅读器的已确认静态结构是：左侧为接近 640 px 宽的放大原信纸，右侧为约 320 px 宽的元数据栏。标题为大号衬线体；下方依次是简介分隔线、Date、Place 和 Source。截图中放大信纸曾因图形层资源延迟而短暂空白，但读者容器及元数据栏的结构和尺寸已被量化确认。
+
+## 本地实现的交互验证结果
+
+本地验证会话在 `scrollTop = 1100 px` 时确认，六张信件的矩阵平移分别包含 `-79`、`+63`、`-33`、`+77`、`-52`、`+23` px 的独立 Y 轴偏移；这证明当前实现不是单纯整轨滚动，而是已启用逐封信的差异化视差。点击可见信件后，阅读器以 `reader-backdrop is-active` 进入，档案添加 `has-selection`，阅读舞台尺寸为 1050 × 642 px，呈现左纸右信息布局。点击覆盖整个视窗的关闭层后，阅读器移除、档案恢复正常状态且 `scrollTop` 仍为精确的 1100 px。
+
 ## 公开源码中确认的交互与实现线索
 
 页面使用 `vertical-archive`、`vertical-viewport`、`vertical-track` 和 `vertical-letter-slot` 组成独立滚动轨道。信件按 `--letter-width`、`--letter-x`、`--letter-y`、`--letter-gap` 和 `--letter-offset` 自定义定位，并带不同 `data-parallax-rate`。每一封信都是可点击按钮，内部是可展开的多页信笺堆叠。信笺样式包含 rag-paper、plain-ivory、service-blue、close-written-fold、office-typewriter、correspondence-card、ruled-notebook 与 red-folded 等变体。
