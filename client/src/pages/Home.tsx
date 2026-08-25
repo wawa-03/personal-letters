@@ -2,17 +2,19 @@
  * 复刻基准：50 封原创信笺使用公开采集的宽度、坐标、视差、页数与移动断点参数。
  * 设计保持“无导航的纵向书信档案”；文案、纸张样式与品牌标识均为原创。
  */
-import { useEffect, useState, type CSSProperties } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { X } from "lucide-react";
 import { archiveMetrics, letters, type ArchiveLetter } from "@/data/letters";
 
 function Paper({ letter, expanded = false }: { letter: ArchiveLetter; expanded?: boolean }) {
   const preview = ["rag", "ivory", "blue"].includes(letter.tone) ? letter.body : letter.lines;
-  const pageCount = Math.max(1, letter.pages);
+  const pageCount = Math.max(1, letter.pages, letter.layers.length);
   return (
     <div className={`paper-stack paper-${letter.tone} ${expanded ? "is-expanded" : ""}`} style={{ "--letter-aspect": letter.aspect } as CSSProperties}>
-      {Array.from({ length: pageCount }, (_, pageIndex) => (
-        <div className="paper-page" key={pageIndex}>
+      {Array.from({ length: pageCount }, (_, pageIndex) => {
+        const layer = letter.layers[pageIndex] ?? { x: 0, y: pageIndex * 2.25, rotation: 0, aspect: letter.aspect };
+        return (
+        <div className="paper-page" key={pageIndex} style={{ "--page-x": `${layer.x}px`, "--page-y": `${layer.y}px`, "--page-rotation": `${layer.rotation}deg`, "--page-z": `${pageCount - pageIndex}`, "--page-aspect": layer.aspect } as CSSProperties}>
           <div className="paper-sheet">
             <div className="paper-head"><span>{letter.title}</span><span>{letter.date}</span></div>
             <div className={letter.tone === "type" ? "paper-copy typed-copy" : "paper-copy"}>
@@ -22,7 +24,7 @@ function Paper({ letter, expanded = false }: { letter: ArchiveLetter; expanded?:
             <div className="paper-end">{pageIndex === pageCount - 1 ? "—" : `${pageIndex + 1}`}</div>
           </div>
         </div>
-      ))}
+      )})}
     </div>
   );
 }
@@ -30,16 +32,38 @@ function Paper({ letter, expanded = false }: { letter: ArchiveLetter; expanded?:
 export default function Home() {
   const [sealOpen, setSealOpen] = useState(false);
   const [selectedLetter, setSelectedLetter] = useState<ArchiveLetter | null>(null);
-  const [scrollTop, setScrollTop] = useState(0);
-  const closeReader = () => setSelectedLetter(null);
+  const [readerClosing, setReaderClosing] = useState(false);
+  const slotNodes = useRef<Record<string, HTMLDivElement | null>>({});
+  const scrollFrame = useRef<number | null>(null);
+  const closeReader = () => {
+    if (!selectedLetter || readerClosing) return;
+    setReaderClosing(true);
+    window.setTimeout(() => { setSelectedLetter(null); setReaderClosing(false); }, 560);
+  };
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") { setSealOpen(false); closeReader(); }
     };
     window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      if (scrollFrame.current !== null) window.cancelAnimationFrame(scrollFrame.current);
+    };
   }, []);
+
+  const handleScroll = (scrollPosition: number) => {
+    if (scrollFrame.current !== null) window.cancelAnimationFrame(scrollFrame.current);
+    scrollFrame.current = window.requestAnimationFrame(() => {
+      letters.forEach((letter) => {
+        const node = slotNodes.current[letter.id];
+        if (!node) return;
+        const offset = Math.round((letter.parallaxBase + scrollPosition * letter.parallaxRate) * 1000) / 1000;
+        node.style.setProperty("--letter-parallax", `${offset}px`);
+      });
+      scrollFrame.current = null;
+    });
+  };
 
   const slotStyle = (letter: ArchiveLetter): CSSProperties => ({
     "--letter-width": `${letter.width}px`,
@@ -51,7 +75,7 @@ export default function Home() {
     "--letter-mobile-y": `${letter.mobileY}px`,
     "--letter-offset": `${letter.offset}px`,
     "--letter-gap": `${letter.gap}px`,
-    "--letter-parallax": `${Math.round(scrollTop * letter.parallaxRate * 1000) / 1000}px`,
+    "--letter-parallax": `${letter.parallaxBase}px`,
     "--intro-delay": `${Math.min(275, letter.id === "letter-01" ? 0 : Number(letter.id.slice(-2)) * 55)}ms`,
   } as CSSProperties);
 
@@ -68,11 +92,11 @@ export default function Home() {
       </aside>
 
       <main className={`archive${sealOpen ? " is-muted" : ""}${selectedLetter ? " has-selection is-intro-locked" : ""}`} aria-label="个人信笺档案">
-        <div className="vertical-viewport" onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}>
+        <div className="vertical-viewport" onScroll={(event) => handleScroll(event.currentTarget.scrollTop)}>
           <div className="vertical-track" style={{ "--desktop-track-height": `${archiveMetrics.desktopTrackHeight}px`, "--mobile-track-height": `${archiveMetrics.mobileTrackHeight}px` } as CSSProperties}>
             {letters.map((letter) => (
-              <div className="vertical-letter-slot" key={letter.id} style={slotStyle(letter)}>
-                <button className="vertical-letter-button" type="button" onClick={() => setSelectedLetter(letter)} aria-label={`阅读：${letter.title}，${letter.date}`}>
+              <div className="vertical-letter-slot" key={letter.id} style={slotStyle(letter)} ref={(node) => { slotNodes.current[letter.id] = node; }}>
+                <button className="vertical-letter-button" type="button" onClick={() => { setReaderClosing(false); setSelectedLetter(letter); }} aria-label={`阅读：${letter.title}，${letter.date}`}>
                   <Paper letter={letter} />
                 </button>
               </div>
@@ -82,7 +106,7 @@ export default function Home() {
       </main>
 
       {selectedLetter && (
-        <section className="reader-backdrop" role="dialog" aria-modal="true" aria-labelledby="reader-title">
+        <section className={readerClosing ? "reader-backdrop is-closing" : "reader-backdrop"} role="dialog" aria-modal="true" aria-labelledby="reader-title">
           <button className="reader-dismiss-layer" type="button" onClick={closeReader} aria-label="返回信笺画布" />
           <div className="reader-stage">
             <div className="reader-paper"><Paper letter={selectedLetter} expanded /></div>
