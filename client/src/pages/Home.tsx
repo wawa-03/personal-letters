@@ -83,13 +83,15 @@ export default function Home() {
     const updateMotion = (timestamp: number) => {
       const elapsed = Math.min(64, Math.max(1, timestamp - (lastScrollFrame.current ?? timestamp)));
       lastScrollFrame.current = timestamp;
-      const follow = 1 - Math.exp(-elapsed / 42);
+      const compactViewport = window.matchMedia("(max-width: 860px)").matches;
+      const follow = 1 - Math.exp(-elapsed / (compactViewport ? 34 : 42));
       smoothedScroll.current += (scrollTarget.current - smoothedScroll.current) * follow;
       letters.forEach((letter) => {
         const node = slotNodes.current[letter.id];
         if (!node) return;
-        const safeRate = Math.max(-.014, Math.min(.014, letter.parallaxRate));
-        const gapLimit = Math.max(18, Math.min(64, letter.gap * .18));
+        const maxRate = compactViewport ? .0105 : .014;
+        const safeRate = Math.max(-maxRate, Math.min(maxRate, letter.parallaxRate));
+        const gapLimit = compactViewport ? Math.max(14, Math.min(42, letter.gap * .14)) : Math.max(18, Math.min(64, letter.gap * .18));
         const rawOffset = letter.parallaxBase + smoothedScroll.current * safeRate;
         const offset = Math.round(Math.max(-gapLimit, Math.min(gapLimit, rawOffset)) * 1000) / 1000;
         node.style.setProperty("--letter-parallax", `${offset}px`);
