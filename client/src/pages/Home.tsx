@@ -9,12 +9,14 @@ import { archiveMetrics, letters, type ArchiveLetter } from "@/data/letters";
 function Paper({ letter, expanded = false }: { letter: ArchiveLetter; expanded?: boolean }) {
   const preview = ["rag", "ivory", "blue"].includes(letter.tone) ? letter.body : letter.lines;
   const pageCount = Math.max(1, letter.pages, letter.layers.length);
+  const visiblePageCount = expanded ? pageCount : Math.min(3, pageCount);
   return (
     <div className={`paper-stack paper-${letter.tone} ${expanded ? "is-expanded" : ""}`} style={{ "--letter-aspect": letter.aspect } as CSSProperties}>
-      {Array.from({ length: pageCount }, (_, pageIndex) => {
+      {Array.from({ length: visiblePageCount }, (_, pageIndex) => {
         const layer = letter.layers[pageIndex] ?? { x: 0, y: pageIndex * 2.25, rotation: 0, aspect: letter.aspect };
+        const stackLayer = expanded ? layer : { x: pageIndex === 1 ? -.7 : pageIndex === 2 ? .7 : 0, y: pageIndex * 2.25, rotation: 0, aspect: layer.aspect };
         return (
-        <div className="paper-page" key={pageIndex} style={{ "--page-x": `${layer.x}px`, "--page-y": `${layer.y}px`, "--page-rotation": `${layer.rotation}deg`, "--page-z": `${pageCount - pageIndex}`, "--page-aspect": layer.aspect } as CSSProperties}>
+        <div className="paper-page" key={pageIndex} style={{ "--page-x": `${stackLayer.x}px`, "--page-y": `${stackLayer.y}px`, "--page-rotation": `${stackLayer.rotation}deg`, "--page-z": `${visiblePageCount - pageIndex}`, "--page-aspect": stackLayer.aspect } as CSSProperties}>
           <div className="paper-sheet">
             <div className="paper-head"><span>{letter.title}</span><span>{letter.date}</span></div>
             <div className={letter.tone === "type" ? "paper-copy typed-copy" : "paper-copy"}>
@@ -32,13 +34,35 @@ function Paper({ letter, expanded = false }: { letter: ArchiveLetter; expanded?:
 export default function Home() {
   const [sealOpen, setSealOpen] = useState(false);
   const [selectedLetter, setSelectedLetter] = useState<ArchiveLetter | null>(null);
-  const [readerClosing, setReaderClosing] = useState(false);
+  const [readerPhase, setReaderPhase] = useState<"idle" | "opening" | "open" | "closing">("idle");
   const slotNodes = useRef<Record<string, HTMLDivElement | null>>({});
   const scrollFrame = useRef<number | null>(null);
+  const scrollTarget = useRef(0);
+  const smoothedScroll = useRef(0);
+  const lastScrollFrame = useRef<number | null>(null);
+  const readerTimer = useRef<number | null>(null);
+  const readerIntent = useRef(0);
+  const readerPhaseRef = useRef<"idle" | "opening" | "open" | "closing">("idle");
+
+  const setPhase = (phase: "idle" | "opening" | "open" | "closing") => { readerPhaseRef.current = phase; setReaderPhase(phase); };
+  const clearReaderTimer = () => { if (readerTimer.current !== null) { window.clearTimeout(readerTimer.current); readerTimer.current = null; } };
+  const openReader = (letter: ArchiveLetter) => {
+    const intent = ++readerIntent.current;
+    clearReaderTimer();
+    setSelectedLetter(letter);
+    setPhase("opening");
+    readerTimer.current = window.setTimeout(() => { if (readerIntent.current === intent) setPhase("open"); }, 560);
+  };
   const closeReader = () => {
-    if (!selectedLetter || readerClosing) return;
-    setReaderClosing(true);
-    window.setTimeout(() => { setSelectedLetter(null); setReaderClosing(false); }, 560);
+    if (!selectedLetter || readerPhaseRef.current === "closing" || readerPhaseRef.current === "idle") return;
+    const intent = ++readerIntent.current;
+    clearReaderTimer();
+    setPhase("closing");
+    readerTimer.current = window.setTimeout(() => {
+      if (readerIntent.current !== intent) return;
+      setSelectedLetter(null);
+      setPhase("idle");
+    }, 560);
   };
 
   useEffect(() => {
@@ -49,20 +73,31 @@ export default function Home() {
     return () => {
       window.removeEventListener("keydown", onKeyDown);
       if (scrollFrame.current !== null) window.cancelAnimationFrame(scrollFrame.current);
+      if (readerTimer.current !== null) window.clearTimeout(readerTimer.current);
     };
   }, []);
 
   const handleScroll = (scrollPosition: number) => {
-    if (scrollFrame.current !== null) window.cancelAnimationFrame(scrollFrame.current);
-    scrollFrame.current = window.requestAnimationFrame(() => {
+    scrollTarget.current = scrollPosition;
+    if (scrollFrame.current !== null) return;
+    const updateMotion = (timestamp: number) => {
+      const elapsed = Math.min(64, Math.max(1, timestamp - (lastScrollFrame.current ?? timestamp)));
+      lastScrollFrame.current = timestamp;
+      const follow = 1 - Math.exp(-elapsed / 42);
+      smoothedScroll.current += (scrollTarget.current - smoothedScroll.current) * follow;
       letters.forEach((letter) => {
         const node = slotNodes.current[letter.id];
         if (!node) return;
-        const offset = Math.round((letter.parallaxBase + scrollPosition * letter.parallaxRate) * 1000) / 1000;
+        const safeRate = Math.max(-.014, Math.min(.014, letter.parallaxRate));
+        const gapLimit = Math.max(18, Math.min(64, letter.gap * .18));
+        const rawOffset = letter.parallaxBase + smoothedScroll.current * safeRate;
+        const offset = Math.round(Math.max(-gapLimit, Math.min(gapLimit, rawOffset)) * 1000) / 1000;
         node.style.setProperty("--letter-parallax", `${offset}px`);
       });
-      scrollFrame.current = null;
-    });
+      if (Math.abs(scrollTarget.current - smoothedScroll.current) > .1) { scrollFrame.current = window.requestAnimationFrame(updateMotion); }
+      else { smoothedScroll.current = scrollTarget.current; scrollFrame.current = null; }
+    };
+    scrollFrame.current = window.requestAnimationFrame(updateMotion);
   };
 
   const slotStyle = (letter: ArchiveLetter): CSSProperties => ({
@@ -96,7 +131,7 @@ export default function Home() {
           <div className="vertical-track" style={{ "--desktop-track-height": `${archiveMetrics.desktopTrackHeight}px`, "--mobile-track-height": `${archiveMetrics.mobileTrackHeight}px` } as CSSProperties}>
             {letters.map((letter) => (
               <div className="vertical-letter-slot" key={letter.id} style={slotStyle(letter)} ref={(node) => { slotNodes.current[letter.id] = node; }}>
-                <button className="vertical-letter-button" type="button" onClick={() => { setReaderClosing(false); setSelectedLetter(letter); }} aria-label={`阅读：${letter.title}，${letter.date}`}>
+                <button className="vertical-letter-button" type="button" onClick={() => openReader(letter)} aria-label={`阅读：${letter.title}，${letter.date}`}>
                   <Paper letter={letter} />
                 </button>
               </div>
@@ -106,12 +141,12 @@ export default function Home() {
       </main>
 
       {selectedLetter && (
-        <section className={readerClosing ? "reader-backdrop is-closing" : "reader-backdrop"} role="dialog" aria-modal="true" aria-labelledby="reader-title">
-          <button className="reader-dismiss-layer" type="button" onClick={closeReader} aria-label="返回信笺画布" />
+        <section className={`reader-backdrop is-${readerPhase}`} role="dialog" aria-modal="true" aria-labelledby="reader-title">
+          <button className="reader-dismiss-layer" type="button" onClick={closeReader} aria-label="返回信笺画布" disabled={readerPhase === "closing"} />
           <div className="reader-stage">
             <div className="reader-paper"><Paper letter={selectedLetter} expanded /></div>
             <aside className="reader-info"><p className="reader-kicker">PERSONAL CORRESPONDENCE</p><h1 id="reader-title">{selectedLetter.title}</h1><p className="reader-summary">{selectedLetter.summary}</p><div className="reader-rule" /><dl><div><dt>日期</dt><dd>{selectedLetter.date}</dd></div><div><dt>地点</dt><dd>{selectedLetter.place}</dd></div><div><dt>来源</dt><dd>私人手记 ↗</dd></div></dl></aside>
-            <button className="reader-mobile-close" type="button" onClick={closeReader} aria-label="关闭信件"><X size={19} strokeWidth={1.4} /></button>
+            <button className="reader-mobile-close" type="button" onClick={closeReader} aria-label="关闭信件" disabled={readerPhase === "closing"}><X size={19} strokeWidth={1.4} /></button>
           </div>
         </section>
       )}
